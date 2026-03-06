@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Web Pen</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Web Pen - Browser-based hand tracking drawing tool">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box
+        }
+
+        body {
+            background: #0a0e1a;
+            overflow: hidden;
+            font-family: 'Poppins', sans-serif
+        }
+
+        video {
+            display: none
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+            position: absolute;
+            z-index: 1
+        }
+
+        /* Right side shortcut guide */
+        #guide {
+            position: fixed;
+            top: 50%;
+            right: 14px;
+            transform: translateY(-50%);
+            z-index: 10;
+            background: rgba(15, 20, 40, 0.72);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(99, 179, 237, 0.14);
+            border-radius: 14px;
+            padding: 16px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            min-width: 190px;
+        }
+
+        #guide h3 {
+            color: #63b3ed;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .sc-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 4px 0
+        }
+
+        .sc-key {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 30px;
+            height: 24px;
+            padding: 0 7px;
+            background: rgba(99, 179, 237, 0.08);
+            border: 1px solid rgba(99, 179, 237, 0.22);
+            border-radius: 5px;
+            color: #63b3ed;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap;
+        }
+
+        .sc-desc {
+            color: rgba(255, 255, 255, 0.48);
+            font-size: 10px
+        }
+
+        .sc-sep {
+            height: 1px;
+            background: rgba(99, 179, 237, 0.08);
+            margin: 3px 0
+        }
+
+        /* Top bar - state indicator */
+        #topbar {
+            position: fixed;
+            top: 14px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(15, 20, 40, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(99, 179, 237, 0.1);
+            border-radius: 10px;
+            padding: 7px 18px;
+        }
+
+        #indicator {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: rgba(99, 179, 237, 0.25);
+            transition: all 0.2s;
+        }
+
+        #indicator.on {
+            background: #63b3ed;
+            box-shadow: 0 0 14px #63b3ed
+        }
+
+        #stateLabel {
+            color: rgba(255, 255, 255, 0.45);
+            font-size: 11px;
+            font-weight: 400
+        }
+
+        /* Left palette */
+        #palette {
+            position: fixed;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: rgba(15, 20, 40, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 8px 6px;
+        }
+
+        .swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: all 0.15s;
+        }
+
+        .swatch:hover {
+            transform: scale(1.12)
+        }
+
+        .swatch.picked {
+            border-color: #fff;
+            transform: scale(1.22);
+            box-shadow: 0 0 8px currentColor
+        }
+
+        /* Notification popup */
+        #notif {
+            position: fixed;
+            top: 58px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            pointer-events: none
+        }
+
+        .notif-msg {
+            background: rgba(15, 20, 40, 0.82);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(99, 179, 237, 0.2);
+            border-radius: 8px;
+            padding: 7px 18px;
+            color: #63b3ed;
+            font-size: 12px;
+            font-weight: 500;
+            animation: fadeIn 0.2s ease, fadeOut 0.2s ease 1.4s forwards;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-6px)
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0)
+            }
+        }
+
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                transform: translateY(-6px)
+            }
+        }
+
+        /* Splash screen */
+        #splash {
+            position: fixed;
+            inset: 0;
+            z-index: 999;
+            background: #0a0e1a;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            transition: opacity 0.4s;
+        }
+
+        #splash.done {
+            opacity: 0;
+            pointer-events: none
+        }
+
+        #splash p {
+            color: #63b3ed;
+            font-size: 15px;
+            font-weight: 300;
+            letter-spacing: 0.5px
+        }
+
+        .ring {
+            width: 44px;
+            height: 44px;
+            border: 3px solid rgba(99, 179, 237, 0.1);
+            border-top-color: #63b3ed;
+            border-radius: 50%;
+            animation: rotate 0.85s linear infinite;
+        }
+
+        @keyframes rotate {
+            to {
+                transform: rotate(360deg)
+            }
+        }
+
+        /* Bottom left tracker count */
+        #tracker {
+            position: fixed;
+            bottom: 14px;
+            left: 14px;
+            z-index: 10;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 10px;
+            background: rgba(15, 20, 40, 0.45);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 7px;
+            padding: 5px 12px;
+        }
+
+        /* Width indicator bottom right */
+        #widthInfo {
+            position: fixed;
+            bottom: 14px;
+            right: 14px;
+            z-index: 10;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 10px;
+            background: rgba(15, 20, 40, 0.45);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 7px;
+            padding: 5px 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="splash">
+        <div class="ring"></div>
+        <p id="splashMsg">Initializing camera...</p>
+    </div>
+
+    <video id="webcam" autoplay playsinline></video>
+    <canvas id="surface"></canvas>
+
+    <div id="topbar">
+        <div id="indicator"></div>
+        <span id="stateLabel">Cursor mode</span>
+    </div>
+
+    <div id="guide">
+        <h3>🖊 Shortcuts</h3>
+        <div class="sc-row"><span class="sc-key">Shift</span><span class="sc-desc">Hold → Draw</span></div>
+        <div class="sc-row"><span class="sc-key">Ctrl+Z</span><span class="sc-desc">Undo</span></div>
+        <div class="sc-row"><span class="sc-key">Ctrl+Y</span><span class="sc-desc">Redo</span></div>
+        <div class="sc-row"><span class="sc-key">Space</span><span class="sc-desc">Clear all</span></div>
+        <div class="sc-sep"></div>
+        <div class="sc-row"><span class="sc-key">E</span><span class="sc-desc">Toggle eraser</span></div>
+        <div class="sc-row"><span class="sc-key">+</span><span class="sc-desc">Thicker brush</span></div>
+        <div class="sc-row"><span class="sc-key">-</span><span class="sc-desc">Thinner brush</span></div>
+        <div class="sc-sep"></div>
+        <div class="sc-row"><span class="sc-key">1-9</span><span class="sc-desc">Pick color</span></div>
+        <div class="sc-row"><span class="sc-key">0</span><span class="sc-desc">Pick color</span></div>
+    </div>
+
+    <div id="palette">
+        <div class="swatch picked" data-hex="#63b3ed" data-idx="1" style="background:#63b3ed"></div>
+        <div class="swatch" data-hex="#f687b3" data-idx="2" style="background:#f687b3"></div>
+        <div class="swatch" data-hex="#68d391" data-idx="3" style="background:#68d391"></div>
+        <div class="swatch" data-hex="#fbd38d" data-idx="4" style="background:#fbd38d"></div>
+        <div class="swatch" data-hex="#e2e8f0" data-idx="5" style="background:#e2e8f0"></div>
+        <div class="swatch" data-hex="#fc8181" data-idx="6" style="background:#fc8181"></div>
+        <div class="swatch" data-hex="#b794f4" data-idx="7" style="background:#b794f4"></div>
+        <div class="swatch" data-hex="#4fd1c5" data-idx="8" style="background:#4fd1c5"></div>
+        <div class="swatch" data-hex="#f6ad55" data-idx="9" style="background:#f6ad55"></div>
+        <div class="swatch" data-hex="#90cdf4" data-idx="0" style="background:#90cdf4"></div>
+    </div>
+
+    <div id="notif"></div>
+    <div id="tracker">Hands: 0</div>
+    <div id="widthInfo">Brush: 5</div>
+
+    <script>
+        // === DOM refs ===
+        var webcam = document.getElementById('webcam');
+        var surface = document.getElementById('surface');
+        var pen = surface.getContext('2d');
+        var splashEl = document.getElementById('splash');
+        var splashMsg = document.getElementById('splashMsg');
+        var indicator = document.getElementById('indicator');
+        var stateLabel = document.getElementById('stateLabel');
+        var notifBox = document.getElementById('notif');
+        var trackerEl = document.getElementById('tracker');
+        var widthInfoEl = document.getElementById('widthInfo');
+
+        // === App state ===
+        var paths = [];       // finished drawn paths
+        var redoPool = [];       // redo stack
+        var activePath = null;     // current drawing path
+        var inking = false;    // is shift held
+        var eraserOn = false;    // eraser toggle
+        var inkColor = '#63b3ed';
+        var inkSize = 5;
+        var launched = false;
+
+        // Smoothed cursor positions per hand
+        var cursor = [
+            { cx: null, cy: null },
+            { cx: null, cy: null }
+        ];
+
+        // === Notifications ===
+        function notify(txt) {
+            notifBox.innerHTML = '';
+            var el = document.createElement('div');
+            el.className = 'notif-msg';
+            el.textContent = txt;
+            notifBox.appendChild(el);
+            setTimeout(function () { if (el.parentNode) el.remove(); }, 1700);
+        }
+
+        // === Color picking ===
+        var swatches = document.querySelectorAll('.swatch');
+        function pickColor(hex) {
+            inkColor = hex;
+            for (var i = 0; i < swatches.length; i++) {
+                if (swatches[i].getAttribute('data-hex') === hex) swatches[i].classList.add('picked');
+                else swatches[i].classList.remove('picked');
+            }
+        }
+        for (var i = 0; i < swatches.length; i++) {
+            swatches[i].addEventListener('click', function () {
+                pickColor(this.getAttribute('data-hex'));
+            });
+        }
+
+        // === Keyboard controls ===
+        window.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Shift') {
+                inking = true;
+                indicator.classList.add('on');
+                stateLabel.textContent = eraserOn ? '🧹 Eraser active' : '✏️ Drawing';
+            }
+            if (ev.key === 'z' && ev.ctrlKey) {
+                ev.preventDefault();
+                if (paths.length > 0) { redoPool.push(paths.pop()); notify('↩ Undo'); }
+            }
+            if (ev.key === 'y' && ev.ctrlKey) {
+                ev.preventDefault();
+                if (redoPool.length > 0) { paths.push(redoPool.pop()); notify('↪ Redo'); }
+            }
+            if (ev.code === 'Space') {
+                ev.preventDefault();
+                paths = []; redoPool = [];
+                notify('🗑 Cleared');
+            }
+            if (ev.key === 'e' || ev.key === 'E') {
+                eraserOn = !eraserOn;
+                notify(eraserOn ? '🧹 Eraser on' : '✏️ Eraser off');
+                stateLabel.textContent = eraserOn ? '🧹 Eraser mode' : 'Cursor mode';
+            }
+            if (ev.key === '+' || ev.key === '=') {
+                inkSize = Math.min(24, inkSize + 1);
+                widthInfoEl.textContent = 'Brush: ' + inkSize;
+                notify('Brush: ' + inkSize);
+            }
+            if (ev.key === '-') {
+                inkSize = Math.max(1, inkSize - 1);
+                widthInfoEl.textContent = 'Brush: ' + inkSize;
+                notify('Brush: ' + inkSize);
+            }
+            // Number keys for color
+            var num = ev.key;
+            if (num >= '0' && num <= '9') {
+                for (var i = 0; i < swatches.length; i++) {
+                    if (swatches[i].getAttribute('data-idx') === num) {
+                        pickColor(swatches[i].getAttribute('data-hex'));
+                        break;
+                    }
+                }
+            }
+        });
+
+        window.addEventListener('keyup', function (ev) {
+            if (ev.key === 'Shift') {
+                inking = false;
+                activePath = null;
+                indicator.classList.remove('on');
+                stateLabel.textContent = eraserOn ? '🧹 Eraser mode' : 'Cursor mode';
+            }
+        });
+
+        // === Render a single path with glow ===
+        function renderPath(p) {
+            if (!p.nodes || p.nodes.length < 2) return;
+            var nodes = p.nodes;
+
+            pen.beginPath();
+            pen.moveTo(nodes[0].px, nodes[0].py);
+
+            if (nodes.length === 2) {
+                pen.lineTo(nodes[1].px, nodes[1].py);
+            } else {
+                for (var k = 1; k < nodes.length - 1; k++) {
+                    var midX = (nodes[k].px + nodes[k + 1].px) / 2;
+                    var midY = (nodes[k].py + nodes[k + 1].py) / 2;
+                    pen.quadraticCurveTo(nodes[k].px, nodes[k].py, midX, midY);
+                }
+                pen.lineTo(nodes[nodes.length - 1].px, nodes[nodes.length - 1].py);
+            }
+
+            // Outer glow
+            pen.shadowColor = p.hue;
+            pen.shadowBlur = 18;
+            pen.strokeStyle = p.hue;
+            pen.lineWidth = p.thickness;
+            pen.lineCap = 'round';
+            pen.lineJoin = 'round';
+            pen.globalAlpha = 0.35;
+            pen.stroke();
+
+            // Core line
+            pen.shadowBlur = 0;
+            pen.globalAlpha = 1;
+            pen.lineWidth = p.thickness * 0.6;
+            pen.stroke();
+        }
+
+        // === Erase nearby paths ===
+        function wipeNear(px, py) {
+            var range = 38;
+            var kept = [];
+            for (var i = 0; i < paths.length; i++) {
+                var hit = false;
+                if (paths[i].nodes) {
+                    for (var j = 0; j < paths[i].nodes.length; j++) {
+                        if (Math.hypot(paths[i].nodes[j].px - px, paths[i].nodes[j].py - py) < range) {
+                            hit = true; break;
+                        }
+                    }
+                }
+                if (!hit) kept.push(paths[i]);
+            }
+            paths = kept;
+        }
+
+        // === Main frame loop ===
+        function frame(output) {
+            if (!launched) {
+                launched = true;
+                splashEl.classList.add('done');
+                setTimeout(function () { splashEl.style.display = 'none'; }, 450);
+            }
+
+            var vw = window.innerWidth;
+            var vh = window.innerHeight;
+            surface.width = vw;
+            surface.height = vh;
+
+            // Camera feed with dark overlay
+            pen.drawImage(output.image, 0, 0, vw, vh);
+            pen.fillStyle = 'rgba(10, 14, 26, 0.82)';
+            pen.fillRect(0, 0, vw, vh);
+
+            // Render all existing paths
+            pen.save();
+            for (var i = 0; i < paths.length; i++) {
+                renderPath(paths[i]);
+            }
+            pen.restore();
+
+            // Hand skeleton colors
+            var skelColors = [
+                { wire: 'rgba(99,179,237,0.22)', node: '#63b3ed' },
+                { wire: 'rgba(246,135,179,0.22)', node: '#f687b3' }
+            ];
+
+            var detected = 0;
+
+            if (output.multiHandLandmarks && output.multiHandedness) {
+                detected = output.multiHandLandmarks.length;
+
+                for (var hi = 0; hi < output.multiHandLandmarks.length; hi++) {
+                    var marks = output.multiHandLandmarks[hi];
+                    var side = output.multiHandedness[hi].label;
+                    var idx = (side === 'Right') ? 0 : 1;
+                    var skel = skelColors[idx];
+
+                    // Draw skeleton
+                    drawConnectors(pen, marks, HAND_CONNECTIONS, { color: skel.wire, lineWidth: 2 });
+                    drawLandmarks(pen, marks, { color: '#fff', lineWidth: 1, radius: 2 });
+
+                    // Index fingertip (landmark 8)
+                    var tipX = marks[8].x * vw;
+                    var tipY = marks[8].y * vh;
+
+                    // Smooth cursor
+                    var cs = cursor[idx];
+                    if (cs.cx === null) {
+                        cs.cx = tipX; cs.cy = tipY;
+                    } else {
+                        cs.cx += (tipX - cs.cx) * 0.42;
+                        cs.cy += (tipY - cs.cy) * 0.42;
+                    }
+
+                    // Draw cursor dot
+                    pen.beginPath();
+                    pen.arc(cs.cx, cs.cy, inking ? 8 : 4, 0, Math.PI * 2);
+                    if (inking) {
+                        pen.fillStyle = eraserOn ? '#fc8181' : '#fff';
+                        pen.shadowColor = eraserOn ? '#fc8181' : '#fff';
+                        pen.shadowBlur = 16;
+                    } else {
+                        pen.fillStyle = 'rgba(99, 179, 237, 0.3)';
+                        pen.shadowBlur = 0;
+                    }
+                    pen.fill();
+                    pen.shadowBlur = 0;
+
+                    // Inking / erasing (primary hand only)
+                    if (hi === 0 && inking) {
+                        if (eraserOn) {
+                            wipeNear(cs.cx, cs.cy);
+                        } else {
+                            if (!activePath) {
+                                activePath = { nodes: [{ px: cs.cx, py: cs.cy }], hue: inkColor, thickness: inkSize };
+                                paths.push(activePath);
+                                redoPool = [];
+                            } else {
+                                activePath.nodes.push({ px: cs.cx, py: cs.cy });
+                            }
+                        }
+                    }
+                }
+            }
+
+            trackerEl.textContent = 'Hands: ' + detected;
+
+            if (detected === 0) {
+                cursor[0] = { cx: null, cy: null };
+                cursor[1] = { cx: null, cy: null };
+                activePath = null;
+            }
+        }
+
+        // === Initialize hand tracker ===
+        try {
+            var tracker = new Hands({
+                locateFile: function (f) {
+                    return 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/' + f;
+                }
+            });
+
+            tracker.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.72,
+                minTrackingConfidence: 0.62
+            });
+
+            tracker.onResults(frame);
+
+            var feed = new Camera(webcam, {
+                onFrame: async function () {
+                    try { await tracker.send({ image: webcam }); }
+                    catch (err) { console.warn('Processing error:', err); }
+                },
+                width: 1280,
+                height: 720
+            });
+
+            feed.start().then(function () {
+                console.log('Camera ready');
+            }).catch(function (e) {
+                console.error('Camera error:', e);
+                splashMsg.textContent = 'Camera error! Check browser permissions.';
+                setTimeout(function () {
+                    splashEl.classList.add('done');
+                    setTimeout(function () { splashEl.style.display = 'none'; }, 450);
+                }, 2500);
+            });
+
+        } catch (e) {
+            console.error('Init error:', e);
+            splashMsg.textContent = 'Error: ' + e.message;
+        }
+    </script>
+</body>
+
+</html>
